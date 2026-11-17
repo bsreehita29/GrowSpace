@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
-import { db, getOrCreateWorkspaceId, handleFirestoreError, OperationType } from '../lib/firebase';
+import {
+  db,
+  getCurrentSession,
+  handleFirestoreError,
+  OperationType,
+  subscribeSession,
+  type WorkspaceSession,
+} from '../lib/firebase';
 import { ensureUserProfileAndSeed } from '../services/firestoreService';
 import {
   getTodayDateKey,
@@ -35,8 +42,9 @@ export interface SmartAlert {
 }
 
 export function useGrowSpaceData() {
-  const uid = useMemo(() => getOrCreateWorkspaceId(), []);
-  const [dataLoading, setDataLoading] = useState(true);
+  const [session, setSession] = useState<WorkspaceSession | null>(() => getCurrentSession());
+  const uid = session?.workspaceId || null;
+  const [dataLoading, setDataLoading] = useState(Boolean(uid));
   const [profile, setProfile] = useState<UserProfile | null>(null);
 
   const [moods, setMoods] = useState<MoodEntry[]>([]);
@@ -59,12 +67,46 @@ export function useGrowSpaceData() {
   const [aiInsights, setAiInsights] = useState<AiInsight[]>([]);
 
   useEffect(() => {
-    ensureUserProfileAndSeed(uid).catch((err) => {
-      console.error('Failed ensuring workspace profile:', err);
+    return subscribeSession((nextSession) => {
+      setSession(nextSession);
+      if (!nextSession) {
+        setProfile(null);
+        setDataLoading(false);
+        setMoods([]);
+        setStudyCourses([]);
+        setStudyTasks([]);
+        setStudyNotes([]);
+        setCareerSkills([]);
+        setCareerApps([]);
+        setCareerPrep([]);
+        setDailyTasks([]);
+        setHabits([]);
+        setHealthLogs([]);
+        setFinanceTx([]);
+        setFinanceGoals([]);
+        setGrowthGoals([]);
+        setOpportunities([]);
+        setWeeklyResets([]);
+        setCalendarEvents([]);
+        setNotifications([]);
+        setAiInsights([]);
+      } else {
+        setDataLoading(true);
+      }
     });
-  }, [uid]);
+  }, []);
 
   useEffect(() => {
+    if (!session) return;
+    ensureUserProfileAndSeed(session.workspaceId, session.displayName, session.username).catch(
+      (err) => {
+        console.error('Failed ensuring workspace profile:', err);
+      }
+    );
+  }, [session]);
+
+  useEffect(() => {
+    if (!uid) return;
     const unsubs: (() => void)[] = [];
 
     unsubs.push(
@@ -288,6 +330,7 @@ export function useGrowSpaceData() {
   }, [todayKey, profile, dailyTasks, studyTasks, moods, todayHealthLog, careerApps, careerSkills]);
 
   return {
+    session,
     uid,
     dataLoading,
     profile,

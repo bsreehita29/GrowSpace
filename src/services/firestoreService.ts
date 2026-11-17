@@ -44,7 +44,11 @@ function generateDocId(prefix: string): string {
 
 const seedLocks = new Map<string, Promise<void>>();
 
-export async function ensureUserProfileAndSeed(uid: string): Promise<void> {
+export async function ensureUserProfileAndSeed(
+  uid: string,
+  initialDisplayName?: string,
+  usernameHandle?: string
+): Promise<void> {
   const existingLock = seedLocks.get(uid);
   if (existingLock) {
     return existingLock;
@@ -60,10 +64,15 @@ export async function ensureUserProfileAndSeed(uid: string): Promise<void> {
     }
 
     if (!snap.exists()) {
+      const resolvedDisplayName =
+        clampStr((initialDisplayName || usernameHandle || 'Grower').trim(), 80) || 'Grower';
+      const resolvedEmail = usernameHandle
+        ? clampStr(`${usernameHandle}@growspace.local`, 160)
+        : 'workspace@growspace.local';
       const initialProfile = {
         userId: uid,
-        displayName: 'Grower',
-        email: 'workspace@growspace.local',
+        displayName: resolvedDisplayName,
+        email: resolvedEmail,
         roleTitle: 'Student & Builder',
         bio: 'Building calm momentum across academics, career, and daily wellbeing.',
         dailyWaterGoalMl: 2500,

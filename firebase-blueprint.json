@@ -518,9 +518,36 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "WorkspaceAccount": {
+      "title": "WorkspaceAccount",
+      "description": "Username and salted PBKDF2 password credential record linked to a private workspace ID.",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string", "minLength": 3, "maxLength": 32, "pattern": "^[a-z0-9._\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "workspaceId": { "type": "string", "minLength": 24, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "passwordSalt": { "type": "string", "minLength": 32, "maxLength": 32, "pattern": "^[a-f0-9]{32}$" },
+        "passwordHash": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[a-f0-9]{64}$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "username",
+        "displayName",
+        "workspaceId",
+        "passwordSalt",
+        "passwordHash",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
+    "/accounts/{username}": {
+      "schema": { "$ref": "#/entities/WorkspaceAccount" },
+      "description": "Username and salted PBKDF2 password hash records mapped to workspace IDs."
+    },
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/UserProfile" },
       "description": "Private user profile and growth targets."

@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { LoginPage } from './components/LoginPage';
 import { AiAssistantView } from './components/views/AiAssistantView';
 import { CalendarView } from './components/views/CalendarView';
 import { CareerView } from './components/views/CareerView';
@@ -108,6 +109,10 @@ function GrowSpaceWorkspace() {
   const [quickAmount, setQuickAmount] = useState('');
   const [quickMoodScore, setQuickMoodScore] = useState(4);
   const [quickSaving, setQuickSaving] = useState(false);
+
+  if (!data.session || !data.uid) {
+    return <LoginPage />;
+  }
 
   const uid = data.uid;
   const unreadCount =
