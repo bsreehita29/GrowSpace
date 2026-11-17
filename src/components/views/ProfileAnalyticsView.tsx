@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Download, LogOut, UserCheck } from 'lucide-react';
-import { logoutUser } from '../../lib/firebase';
+import { Download, UserCheck } from 'lucide-react';
 import { updateUserProfile } from '../../services/firestoreService';
 import type {
   CareerApplication,
@@ -262,9 +261,9 @@ export function ProfileAnalyticsView({
 
         <div className="lg:col-span-5 bg-white border border-[#E4E7DF] rounded-xl p-6 space-y-5 h-fit">
           <div>
-            <h3 className="text-base font-semibold text-[#1F2A22]">Account & Portability</h3>
+            <h3 className="text-base font-semibold text-[#1F2A22]">Workspace & Portability</h3>
             <p className="text-xs text-[#5A685C] mt-1">
-              Signed in as <span className="font-medium text-[#1F2A22]">{profile?.email}</span>
+              Your workspace is synced directly with Firestore and ready whenever you open the app.
             </p>
           </div>
 
@@ -276,15 +275,6 @@ export function ProfileAnalyticsView({
             >
               <Download className="w-4 h-4" />
               <span>Export Workspace Data (JSON)</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => logoutUser()}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-[#E4E7DF] text-[#7B2E28] text-xs font-medium rounded-lg hover:bg-[#FDF5F3] cursor-pointer"
-            >
-              <LogOut className="w-4 h-4" />
-              <span>Sign Out</span>
             </button>
           </div>
         </div>

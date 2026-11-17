@@ -21,16 +21,12 @@ service cloud.firestore {
       return resource.data;
     }
 
-    function isSignedIn() {
-      return request.auth != null;
+    function isValidWorkspaceId(id) {
+      return id is string && id.size() >= 24 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    function isVerified() {
-      return isSignedIn() && request.auth.token.email_verified == true;
-    }
-
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+    function isWorkspaceAccess(userId) {
+      return isValidWorkspaceId(userId);
     }
 
     function userDocExists(userId) {
@@ -48,7 +44,6 @@ service cloud.firestore {
     function hasValidOwnerCreate(data, userId) {
       return data.userId is string &&
         data.userId == userId &&
-        data.userId == request.auth.uid &&
         data.createdAt == request.time &&
         data.updatedAt == request.time;
     }
@@ -395,15 +390,13 @@ service cloud.firestore {
 
     // User Profile Collection (Strict Owner PII Isolation)
     match /users/{userId} {
-      allow get: if isOwner(userId) && isValidId(userId);
+      allow get: if isWorkspaceAccess(userId) && isValidId(userId);
       allow list: if false;
-      allow create: if isVerified() &&
-        isOwner(userId) &&
+      allow create: if isWorkspaceAccess(userId) &&
         isValidId(userId) &&
         isValidUserProfile(incoming()) &&
         hasValidOwnerCreate(incoming(), userId);
-      allow update: if isVerified() &&
-        isOwner(userId) &&
+      allow update: if isWorkspaceAccess(userId) &&
         isValidId(userId) &&
         isValidUserProfile(incoming()) &&
         hasImmutableOwnerUpdate() && (
@@ -418,250 +411,250 @@ service cloud.firestore {
 
       // Mental Wellness
       match /moods/{entryId} {
-        allow get: if isOwner(userId) && isValidId(userId) && isValidId(entryId);
-        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
-        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(entryId) &&
+        allow get: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(entryId);
+        allow list: if isWorkspaceAccess(userId) && resource.data.userId == userId;
+        allow create: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(entryId) &&
           isValidMoodEntry(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
-        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(entryId) &&
+        allow update: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(entryId) &&
           isValidMoodEntry(incoming()) && hasImmutableOwnerUpdate() &&
           incoming().diff(existing()).affectedKeys().hasOnly([
             'moodScore', 'stressLevel', 'emotionLabel', 'meditationMinutes', 'journalText', 'gratitudeNote', 'updatedAt'
           ]);
-        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(entryId);
+        allow delete: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(entryId);
       }
 
       // Study Courses
       match /studyCourses/{courseId} {
-        allow get: if isOwner(userId) && isValidId(userId) && isValidId(courseId);
-        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
-        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(courseId) &&
+        allow get: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(courseId);
+        allow list: if isWorkspaceAccess(userId) && resource.data.userId == userId;
+        allow create: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(courseId) &&
           isValidStudyCourse(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
-        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(courseId) &&
+        allow update: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(courseId) &&
           isValidStudyCourse(incoming()) && hasImmutableOwnerUpdate() && (
             incoming().diff(existing()).affectedKeys().hasOnly(['attendedClasses', 'totalClasses', 'updatedAt']) ||
             incoming().diff(existing()).affectedKeys().hasOnly(['courseName', 'courseCode', 'dayOfWeek', 'startTime', 'endTime', 'room', 'targetAttendance', 'updatedAt'])
           );
-        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(courseId);
+        allow delete: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(courseId);
       }
 
       // Study Tasks (Assignments & Exams)
       match /studyTasks/{taskId} {
-        allow get: if isOwner(userId) && isValidId(userId) && isValidId(taskId);
-        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
-        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(taskId) &&
+        allow get: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(taskId);
+        allow list: if isWorkspaceAccess(userId) && resource.data.userId == userId;
+        allow create: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(taskId) &&
           isValidStudyTask(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
-        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(taskId) &&
+        allow update: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(taskId) &&
           isValidStudyTask(incoming()) && hasImmutableOwnerUpdate() && (
             incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) ||
             incoming().diff(existing()).affectedKeys().hasOnly(['title', 'courseName', 'taskType', 'dueDate', 'priority', 'notes', 'updatedAt'])
           );
-        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(taskId);
+        allow delete: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(taskId);
       }
 
       // Study Notes & Focus Logs
       match /studyNotes/{noteId} {
-        allow get: if isOwner(userId) && isValidId(userId) && isValidId(noteId);
-        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
-        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(noteId) &&
+        allow get: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(noteId);
+        allow list: if isWorkspaceAccess(userId) && resource.data.userId == userId;
+        allow create: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(noteId) &&
           isValidStudyNote(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
-        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(noteId) &&
+        allow update: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(noteId) &&
           isValidStudyNote(incoming()) && hasImmutableOwnerUpdate() && (
             incoming().diff(existing()).affectedKeys().hasOnly(['title', 'courseName', 'content', 'updatedAt']) ||
             incoming().diff(existing()).affectedKeys().hasOnly(['focusMinutes', 'updatedAt'])
           );
-        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(noteId);
+        allow delete: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(noteId);
       }
 
       // Career Skills
       match /careerSkills/{skillId} {
-        allow get: if isOwner(userId) && isValidId(userId) && isValidId(skillId);
-        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
-        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(skillId) &&
+        allow get: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(skillId);
+        allow list: if isWorkspaceAccess(userId) && resource.data.userId == userId;
+        allow create: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(skillId) &&
           isValidCareerSkill(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
-        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(skillId) &&
+        allow update: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(skillId) &&
           isValidCareerSkill(incoming()) && hasImmutableOwnerUpdate() && (
             incoming().diff(existing()).affectedKeys().hasOnly(['proficiency', 'updatedAt']) ||
             incoming().diff(existing()).affectedKeys().hasOnly(['name', 'category', 'proficiency', 'targetLevel', 'notes', 'updatedAt'])
           );
-        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(skillId);
+        allow delete: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(skillId);
       }
 
       // Career Applications
       match /careerApps/{appId} {
-        allow get: if isOwner(userId) && isValidId(userId) && isValidId(appId);
-        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
-        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(appId) &&
+        allow get: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(appId);
+        allow list: if isWorkspaceAccess(userId) && resource.data.userId == userId;
+        allow create: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(appId) &&
           isValidCareerApplication(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
-        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(appId) &&
+        allow update: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(appId) &&
           isValidCareerApplication(incoming()) && hasImmutableOwnerUpdate() &&
           existing().status != 'rejected' && (
             incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) ||
             incoming().diff(existing()).affectedKeys().hasOnly(['company', 'role', 'appType', 'deadline', 'resumeVersion', 'notes', 'updatedAt'])
           );
-        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(appId);
+        allow delete: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(appId);
       }
 
       // Career Prep
       match /careerPrep/{prepId} {
-        allow get: if isOwner(userId) && isValidId(userId) && isValidId(prepId);
-        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
-        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(prepId) &&
+        allow get: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(prepId);
+        allow list: if isWorkspaceAccess(userId) && resource.data.userId == userId;
+        allow create: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(prepId) &&
           isValidCareerPrepItem(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
-        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(prepId) &&
+        allow update: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(prepId) &&
           isValidCareerPrepItem(incoming()) && hasImmutableOwnerUpdate() && (
             incoming().diff(existing()).affectedKeys().hasOnly(['completed', 'updatedAt']) ||
             incoming().diff(existing()).affectedKeys().hasOnly(['title', 'category', 'answerNotes', 'updatedAt'])
           );
-        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(prepId);
+        allow delete: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(prepId);
       }
 
       // Daily Tasks
       match /dailyTasks/{taskId} {
-        allow get: if isOwner(userId) && isValidId(userId) && isValidId(taskId);
-        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
-        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(taskId) &&
+        allow get: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(taskId);
+        allow list: if isWorkspaceAccess(userId) && resource.data.userId == userId;
+        allow create: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(taskId) &&
           isValidDailyTask(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
-        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(taskId) &&
+        allow update: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(taskId) &&
           isValidDailyTask(incoming()) && hasImmutableOwnerUpdate() && (
             incoming().diff(existing()).affectedKeys().hasOnly(['completed', 'updatedAt']) ||
             incoming().diff(existing()).affectedKeys().hasOnly(['reminderEnabled', 'updatedAt']) ||
             incoming().diff(existing()).affectedKeys().hasOnly(['title', 'dueDate', 'dueTime', 'category', 'priority', 'updatedAt'])
           );
-        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(taskId);
+        allow delete: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(taskId);
       }
 
       // Habits
       match /habits/{habitId} {
-        allow get: if isOwner(userId) && isValidId(userId) && isValidId(habitId);
-        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
-        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(habitId) &&
+        allow get: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(habitId);
+        allow list: if isWorkspaceAccess(userId) && resource.data.userId == userId;
+        allow create: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(habitId) &&
           isValidHabit(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
-        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(habitId) &&
+        allow update: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(habitId) &&
           isValidHabit(incoming()) && hasImmutableOwnerUpdate() && (
             incoming().diff(existing()).affectedKeys().hasOnly(['completedDates', 'updatedAt']) ||
             incoming().diff(existing()).affectedKeys().hasOnly(['title', 'frequency', 'targetPerWeek', 'updatedAt'])
           );
-        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(habitId);
+        allow delete: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(habitId);
       }
 
       // Health Logs
       match /healthLogs/{logId} {
-        allow get: if isOwner(userId) && isValidId(userId) && isValidId(logId);
-        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
-        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(logId) &&
+        allow get: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(logId);
+        allow list: if isWorkspaceAccess(userId) && resource.data.userId == userId;
+        allow create: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(logId) &&
           isValidHealthLog(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
-        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(logId) &&
+        allow update: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(logId) &&
           isValidHealthLog(incoming()) && hasImmutableOwnerUpdate() && (
             incoming().diff(existing()).affectedKeys().hasOnly(['waterMl', 'updatedAt']) ||
             incoming().diff(existing()).affectedKeys().hasOnly(['selfCareChecklist', 'updatedAt']) ||
             incoming().diff(existing()).affectedKeys().hasOnly(['sleepHours', 'waterMl', 'workoutMinutes', 'workoutType', 'nutritionNote', 'calories', 'selfCareChecklist', 'updatedAt'])
           );
-        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(logId);
+        allow delete: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(logId);
       }
 
       // Finance Transactions
       match /financeTx/{txId} {
-        allow get: if isOwner(userId) && isValidId(userId) && isValidId(txId);
-        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
-        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(txId) &&
+        allow get: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(txId);
+        allow list: if isWorkspaceAccess(userId) && resource.data.userId == userId;
+        allow create: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(txId) &&
           isValidFinanceTx(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
-        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(txId) &&
+        allow update: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(txId) &&
           isValidFinanceTx(incoming()) && hasImmutableOwnerUpdate() &&
           incoming().diff(existing()).affectedKeys().hasOnly(['title', 'amount', 'txType', 'category', 'dateKey', 'notes', 'updatedAt']);
-        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(txId);
+        allow delete: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(txId);
       }
 
       // Finance Goals
       match /financeGoals/{goalId} {
-        allow get: if isOwner(userId) && isValidId(userId) && isValidId(goalId);
-        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
-        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(goalId) &&
+        allow get: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(goalId);
+        allow list: if isWorkspaceAccess(userId) && resource.data.userId == userId;
+        allow create: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(goalId) &&
           isValidFinanceGoal(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
-        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(goalId) &&
+        allow update: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(goalId) &&
           isValidFinanceGoal(incoming()) && hasImmutableOwnerUpdate() && (
             incoming().diff(existing()).affectedKeys().hasOnly(['currentAmount', 'updatedAt']) ||
             incoming().diff(existing()).affectedKeys().hasOnly(['title', 'goalType', 'targetAmount', 'currentAmount', 'category', 'updatedAt'])
           );
-        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(goalId);
+        allow delete: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(goalId);
       }
 
       // Personal Growth Goals
       match /growthGoals/{goalId} {
-        allow get: if isOwner(userId) && isValidId(userId) && isValidId(goalId);
-        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
-        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(goalId) &&
+        allow get: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(goalId);
+        allow list: if isWorkspaceAccess(userId) && resource.data.userId == userId;
+        allow create: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(goalId) &&
           isValidGrowthGoal(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
-        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(goalId) &&
+        allow update: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(goalId) &&
           isValidGrowthGoal(incoming()) && hasImmutableOwnerUpdate() && (
             incoming().diff(existing()).affectedKeys().hasOnly(['progress', 'isAchievement', 'updatedAt']) ||
             incoming().diff(existing()).affectedKeys().hasOnly(['title', 'category', 'targetDate', 'progress', 'visionQuote', 'milestoneNote', 'isAchievement', 'updatedAt'])
           );
-        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(goalId);
+        allow delete: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(goalId);
       }
 
       // Opportunities
       match /opportunities/{oppId} {
-        allow get: if isOwner(userId) && isValidId(userId) && isValidId(oppId);
-        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
-        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(oppId) &&
+        allow get: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(oppId);
+        allow list: if isWorkspaceAccess(userId) && resource.data.userId == userId;
+        allow create: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(oppId) &&
           isValidOpportunity(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
-        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(oppId) &&
+        allow update: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(oppId) &&
           isValidOpportunity(incoming()) && hasImmutableOwnerUpdate() && (
             incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) ||
             incoming().diff(existing()).affectedKeys().hasOnly(['title', 'organization', 'oppType', 'deadline', 'linkUrl', 'status', 'notes', 'updatedAt'])
           );
-        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(oppId);
+        allow delete: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(oppId);
       }
 
       // Weekly Resets
       match /weeklyResets/{resetId} {
-        allow get: if isOwner(userId) && isValidId(userId) && isValidId(resetId);
-        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
-        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(resetId) &&
+        allow get: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(resetId);
+        allow list: if isWorkspaceAccess(userId) && resource.data.userId == userId;
+        allow create: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(resetId) &&
           isValidWeeklyReset(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
-        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(resetId) &&
+        allow update: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(resetId) &&
           isValidWeeklyReset(incoming()) && hasImmutableOwnerUpdate() &&
           incoming().diff(existing()).affectedKeys().hasOnly([
             'weekLabel', 'wins', 'challenges', 'focusTheme', 'nextWeekPriorities',
             'wellnessRating', 'productivityRating', 'updatedAt'
           ]);
-        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(resetId);
+        allow delete: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(resetId);
       }
 
       // Calendar Events
       match /calendarEvents/{eventId} {
-        allow get: if isOwner(userId) && isValidId(userId) && isValidId(eventId);
-        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
-        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(eventId) &&
+        allow get: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(eventId);
+        allow list: if isWorkspaceAccess(userId) && resource.data.userId == userId;
+        allow create: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(eventId) &&
           isValidCalendarEvent(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
-        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(eventId) &&
+        allow update: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(eventId) &&
           isValidCalendarEvent(incoming()) && hasImmutableOwnerUpdate() &&
           incoming().diff(existing()).affectedKeys().hasOnly([
             'title', 'dateKey', 'startTime', 'endTime', 'moduleCategory', 'notes', 'updatedAt'
           ]);
-        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(eventId);
+        allow delete: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(eventId);
       }
 
       // Notifications
       match /notifications/{notifId} {
-        allow get: if isOwner(userId) && isValidId(userId) && isValidId(notifId);
-        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
-        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(notifId) &&
+        allow get: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(notifId);
+        allow list: if isWorkspaceAccess(userId) && resource.data.userId == userId;
+        allow create: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(notifId) &&
           isValidAppNotification(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
-        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(notifId) &&
+        allow update: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(notifId) &&
           isValidAppNotification(incoming()) && hasImmutableOwnerUpdate() &&
           incoming().diff(existing()).affectedKeys().hasOnly(['read', 'updatedAt']);
-        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(notifId);
+        allow delete: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(notifId);
       }
 
       // AI Insights
       match /aiInsights/{insightId} {
-        allow get: if isOwner(userId) && isValidId(userId) && isValidId(insightId);
-        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
-        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(insightId) &&
+        allow get: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(insightId);
+        allow list: if isWorkspaceAccess(userId) && resource.data.userId == userId;
+        allow create: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(insightId) &&
           isValidAiInsight(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
         allow update: if false;
-        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(insightId);
+        allow delete: if isWorkspaceAccess(userId) && isValidId(userId) && isValidId(insightId);
       }
     }
   }

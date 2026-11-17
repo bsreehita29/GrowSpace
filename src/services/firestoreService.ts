@@ -8,7 +8,6 @@ import {
   updateDoc,
   writeBatch,
 } from 'firebase/firestore';
-import type { User } from 'firebase/auth';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import {
   clampInt,
@@ -43,46 +42,60 @@ function generateDocId(prefix: string): string {
   return `${prefix}_${Date.now()}_${rand}`.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 120);
 }
 
-export async function ensureUserProfileAndSeed(user: User): Promise<void> {
-  const userRef = doc(db, 'users', user.uid);
-  let snap;
-  try {
-    snap = await getDoc(userRef);
-  } catch (err) {
-    handleFirestoreError(err, OperationType.GET, `users/${user.uid}`);
+const seedLocks = new Map<string, Promise<void>>();
+
+export async function ensureUserProfileAndSeed(uid: string): Promise<void> {
+  const existingLock = seedLocks.get(uid);
+  if (existingLock) {
+    return existingLock;
   }
 
-  if (!snap.exists()) {
-    const initialProfile = {
-      userId: user.uid,
-      displayName: clampStr(user.displayName || user.email?.split('@')[0] || 'Grower', 80) || 'Grower',
-      email: clampStr(user.email || 'user@growspace.app', 160),
-      roleTitle: 'Student & Builder',
-      bio: 'Building calm momentum across academics, career, and daily wellbeing.',
-      dailyWaterGoalMl: 2500,
-      dailySleepGoalHours: 8,
-      monthlyBudgetLimit: 1200,
-      dailyFocusGoalMinutes: 120,
-      currencySymbol: '$',
-      seededStarterData: false,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    };
-
+  const task = (async () => {
+    const userRef = doc(db, 'users', uid);
+    let snap;
     try {
-      await setDoc(userRef, initialProfile);
+      snap = await getDoc(userRef);
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `users/${user.uid}`);
+      handleFirestoreError(err, OperationType.GET, `users/${uid}`);
     }
 
-    await seedStarterWorkspace(user.uid);
-    return;
-  }
+    if (!snap.exists()) {
+      const initialProfile = {
+        userId: uid,
+        displayName: 'Grower',
+        email: 'workspace@growspace.local',
+        roleTitle: 'Student & Builder',
+        bio: 'Building calm momentum across academics, career, and daily wellbeing.',
+        dailyWaterGoalMl: 2500,
+        dailySleepGoalHours: 8,
+        monthlyBudgetLimit: 1200,
+        dailyFocusGoalMinutes: 120,
+        currencySymbol: '$',
+        seededStarterData: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
 
-  const data = snap.data() as Partial<UserProfile>;
-  if (!data.seededStarterData) {
-    await seedStarterWorkspace(user.uid);
-  }
+      try {
+        await setDoc(userRef, initialProfile);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.CREATE, `users/${uid}`);
+      }
+
+      await seedStarterWorkspace(uid);
+      return;
+    }
+
+    const data = snap.data() as Partial<UserProfile>;
+    if (!data.seededStarterData) {
+      await seedStarterWorkspace(uid);
+    }
+  })().finally(() => {
+    seedLocks.delete(uid);
+  });
+
+  seedLocks.set(uid, task);
+  return task;
 }
 
 async function seedStarterWorkspace(uid: string): Promise<void> {
@@ -93,8 +106,8 @@ async function seedStarterWorkspace(uid: string): Promise<void> {
   const inFiveDays = getOffsetDateKey(5);
   const inTenDays = getOffsetDateKey(10);
 
-  const batch = writeBatch(db);
-  const ts = serverTimestamp();
+  const batch1 = writeBatch(db);
+  const ts1 = serverTimestamp();
 
   // Mood entries (last 3 days)
   const moodSeeds = [
@@ -129,8 +142,8 @@ async function seedStarterWorkspace(uid: string): Promise<void> {
       gratitudeNote: 'Morning sunlight at my desk.',
     },
   ];
-  for (const m of moodSeeds) {
-    batch.set(doc(db, `users/${uid}/moods`, m.id), { ...m, userId: uid, createdAt: ts, updatedAt: ts });
+  for (const { id, ...fields } of moodSeeds) {
+    batch1.set(doc(db, `users/${uid}/moods`, id), { ...fields, userId: uid, createdAt: ts1, updatedAt: ts1 });
   }
 
   // Study courses
@@ -172,8 +185,8 @@ async function seedStarterWorkspace(uid: string): Promise<void> {
       targetAttendance: 75,
     },
   ];
-  for (const c of courseSeeds) {
-    batch.set(doc(db, `users/${uid}/studyCourses`, c.id), { ...c, userId: uid, createdAt: ts, updatedAt: ts });
+  for (const { id, ...fields } of courseSeeds) {
+    batch1.set(doc(db, `users/${uid}/studyCourses`, id), { ...fields, userId: uid, createdAt: ts1, updatedAt: ts1 });
   }
 
   // Study tasks
@@ -199,19 +212,19 @@ async function seedStarterWorkspace(uid: string): Promise<void> {
       notes: 'Revise chapters 4-6 and timed practice problems.',
     },
   ];
-  for (const st of studyTaskSeeds) {
-    batch.set(doc(db, `users/${uid}/studyTasks`, st.id), { ...st, userId: uid, createdAt: ts, updatedAt: ts });
+  for (const { id, ...fields } of studyTaskSeeds) {
+    batch1.set(doc(db, `users/${uid}/studyTasks`, id), { ...fields, userId: uid, createdAt: ts1, updatedAt: ts1 });
   }
 
   // Study note
-  batch.set(doc(db, `users/${uid}/studyNotes`, 'snote_seed_1'), {
+  batch1.set(doc(db, `users/${uid}/studyNotes`, 'snote_seed_1'), {
     userId: uid,
     title: 'Dynamic Programming Patterns',
     courseName: 'CS 301',
     content: '1. Define subproblem state clearly.\n2. Identify recurrence transition.\n3. Check base cases and memoization bounds.',
     focusMinutes: 50,
-    createdAt: ts,
-    updatedAt: ts,
+    createdAt: ts1,
+    updatedAt: ts1,
   });
 
   // Career skills, applications & prep
@@ -220,11 +233,11 @@ async function seedStarterWorkspace(uid: string): Promise<void> {
     { id: 'skill_seed_2', name: 'SQL & Data Modeling', category: 'Data', proficiency: 68, targetLevel: 85, notes: 'Practicing window functions and schema normalization.' },
     { id: 'skill_seed_3', name: 'Product Storytelling', category: 'Communication', proficiency: 72, targetLevel: 85, notes: 'Structuring STAR case studies for interviews.' },
   ];
-  for (const s of skillSeeds) {
-    batch.set(doc(db, `users/${uid}/careerSkills`, s.id), { ...s, userId: uid, createdAt: ts, updatedAt: ts });
+  for (const { id, ...fields } of skillSeeds) {
+    batch1.set(doc(db, `users/${uid}/careerSkills`, id), { ...fields, userId: uid, createdAt: ts1, updatedAt: ts1 });
   }
 
-  batch.set(doc(db, `users/${uid}/careerApps`, 'app_seed_1'), {
+  batch1.set(doc(db, `users/${uid}/careerApps`, 'app_seed_1'), {
     userId: uid,
     company: 'Northstar Labs',
     role: 'Product Engineering Intern',
@@ -233,19 +246,28 @@ async function seedStarterWorkspace(uid: string): Promise<void> {
     deadline: inFiveDays,
     resumeVersion: 'v2.4-ProductEng',
     notes: 'Technical screen scheduled; review portfolio case study.',
-    createdAt: ts,
-    updatedAt: ts,
+    createdAt: ts1,
+    updatedAt: ts1,
   });
 
-  batch.set(doc(db, `users/${uid}/careerPrep`, 'prep_seed_1'), {
+  batch1.set(doc(db, `users/${uid}/careerPrep`, 'prep_seed_1'), {
     userId: uid,
     title: 'Quantify impact on top 3 resume bullets',
     category: 'resume',
     answerNotes: 'Use metric-driven phrasing: Action + Context + Measurable Result.',
     completed: false,
-    createdAt: ts,
-    updatedAt: ts,
+    createdAt: ts1,
+    updatedAt: ts1,
   });
+
+  try {
+    await batch1.commit();
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `users/${uid}/starterSeedBatch1`);
+  }
+
+  const batch2 = writeBatch(db);
+  const ts2 = serverTimestamp();
 
   // Daily tasks & habits
   const dailyTaskSeeds = [
@@ -270,8 +292,8 @@ async function seedStarterWorkspace(uid: string): Promise<void> {
       reminderEnabled: true,
     },
   ];
-  for (const dt of dailyTaskSeeds) {
-    batch.set(doc(db, `users/${uid}/dailyTasks`, dt.id), { ...dt, userId: uid, createdAt: ts, updatedAt: ts });
+  for (const { id, ...fields } of dailyTaskSeeds) {
+    batch2.set(doc(db, `users/${uid}/dailyTasks`, id), { ...fields, userId: uid, createdAt: ts2, updatedAt: ts2 });
   }
 
   const habitSeeds = [
@@ -297,8 +319,8 @@ async function seedStarterWorkspace(uid: string): Promise<void> {
       completedDates: [yesterday],
     },
   ];
-  for (const h of habitSeeds) {
-    batch.set(doc(db, `users/${uid}/habits`, h.id), { ...h, userId: uid, createdAt: ts, updatedAt: ts });
+  for (const { id, ...fields } of habitSeeds) {
+    batch2.set(doc(db, `users/${uid}/habits`, id), { ...fields, userId: uid, createdAt: ts2, updatedAt: ts2 });
   }
 
   // Health logs (last 3 days)
@@ -337,8 +359,8 @@ async function seedStarterWorkspace(uid: string): Promise<void> {
       selfCareChecklist: ['Sunlight walk'],
     },
   ];
-  for (const hl of healthSeeds) {
-    batch.set(doc(db, `users/${uid}/healthLogs`, hl.id), { ...hl, userId: uid, createdAt: ts, updatedAt: ts });
+  for (const { id, ...fields } of healthSeeds) {
+    batch2.set(doc(db, `users/${uid}/healthLogs`, id), { ...fields, userId: uid, createdAt: ts2, updatedAt: ts2 });
   }
 
   // Finance transactions & goals
@@ -348,23 +370,23 @@ async function seedStarterWorkspace(uid: string): Promise<void> {
     { id: 'tx_seed_3', title: 'Emergency Reserve Transfer', amount: 200, txType: 'savings', category: 'Savings', dateKey: today, notes: 'Automated monthly cushion' },
     { id: 'tx_seed_4', title: 'Transit Pass Renewal', amount: 38, txType: 'expense', category: 'Transport', dateKey: today, notes: 'Monthly commuter pass' },
   ];
-  for (const tx of txSeeds) {
-    batch.set(doc(db, `users/${uid}/financeTx`, tx.id), { ...tx, userId: uid, createdAt: ts, updatedAt: ts });
+  for (const { id, ...fields } of txSeeds) {
+    batch2.set(doc(db, `users/${uid}/financeTx`, id), { ...fields, userId: uid, createdAt: ts2, updatedAt: ts2 });
   }
 
-  batch.set(doc(db, `users/${uid}/financeGoals`, 'fgoal_seed_1'), {
+  batch2.set(doc(db, `users/${uid}/financeGoals`, 'fgoal_seed_1'), {
     userId: uid,
     title: '6-Month Calm Cushion',
     goalType: 'savings',
     targetAmount: 2400,
     currentAmount: 950,
     category: 'Emergency Fund',
-    createdAt: ts,
-    updatedAt: ts,
+    createdAt: ts2,
+    updatedAt: ts2,
   });
 
   // Personal growth goals
-  batch.set(doc(db, `users/${uid}/growthGoals`, 'ggoal_seed_1'), {
+  batch2.set(doc(db, `users/${uid}/growthGoals`, 'ggoal_seed_1'), {
     userId: uid,
     title: 'Ship Personal Portfolio & 2 Case Studies',
     category: 'Career',
@@ -373,12 +395,12 @@ async function seedStarterWorkspace(uid: string): Promise<void> {
     visionQuote: 'Small, honest daily craft compounds into unmistakable confidence.',
     milestoneNote: 'Case study #1 drafted; polishing live demos.',
     isAchievement: false,
-    createdAt: ts,
-    updatedAt: ts,
+    createdAt: ts2,
+    updatedAt: ts2,
   });
 
   // Tracked opportunity
-  batch.set(doc(db, `users/${uid}/opportunities`, 'opp_seed_1'), {
+  batch2.set(doc(db, `users/${uid}/opportunities`, 'opp_seed_1'), {
     userId: uid,
     title: 'Sustainable Tech Fellowship 2026',
     organization: 'Climate Builders Collective',
@@ -387,12 +409,12 @@ async function seedStarterWorkspace(uid: string): Promise<void> {
     linkUrl: 'https://example.org/fellowship',
     status: 'shortlisted',
     notes: 'Prepare 500-word impact essay before next Friday.',
-    createdAt: ts,
-    updatedAt: ts,
+    createdAt: ts2,
+    updatedAt: ts2,
   });
 
   // Weekly reset
-  batch.set(doc(db, `users/${uid}/weeklyResets`, 'wreset_seed_1'), {
+  batch2.set(doc(db, `users/${uid}/weeklyResets`, 'wreset_seed_1'), {
     userId: uid,
     weekLabel: 'Week of Nov 9 – Nov 15',
     wins: 'Maintained 85%+ class attendance and logged consistent sleep above 7.5 hours.',
@@ -405,30 +427,30 @@ async function seedStarterWorkspace(uid: string): Promise<void> {
     ],
     wellnessRating: 4,
     productivityRating: 4,
-    createdAt: ts,
-    updatedAt: ts,
+    createdAt: ts2,
+    updatedAt: ts2,
   });
 
   // Welcome notification
-  batch.set(doc(db, `users/${uid}/notifications`, 'notif_seed_1'), {
+  batch2.set(doc(db, `users/${uid}/notifications`, 'notif_seed_1'), {
     userId: uid,
     title: 'Welcome to GROW SPACE',
     message: 'Your personal sanctuary is ready. Explore your dashboard or ask the AI Assistant for a tailored schedule.',
     module: 'dashboard',
     read: false,
-    createdAt: ts,
-    updatedAt: ts,
+    createdAt: ts2,
+    updatedAt: ts2,
   });
 
-  batch.update(doc(db, 'users', uid), {
+  batch2.update(doc(db, 'users', uid), {
     seededStarterData: true,
-    updatedAt: ts,
+    updatedAt: ts2,
   });
 
   try {
-    await batch.commit();
+    await batch2.commit();
   } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `users/${uid}/starterSeed`);
+    handleFirestoreError(err, OperationType.WRITE, `users/${uid}/starterSeedBatch2`);
   }
 }
 

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { onAuthStateChanged, type User } from 'firebase/auth';
 import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
-import { auth, db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, getOrCreateWorkspaceId, handleFirestoreError, OperationType } from '../lib/firebase';
 import { ensureUserProfileAndSeed } from '../services/firestoreService';
 import {
   getTodayDateKey,
@@ -36,8 +35,7 @@ export interface SmartAlert {
 }
 
 export function useGrowSpaceData() {
-  const [user, setUser] = useState<User | null>(null);
-  const [authReady, setAuthReady] = useState(false);
+  const uid = useMemo(() => getOrCreateWorkspaceId(), []);
   const [dataLoading, setDataLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
 
@@ -61,27 +59,12 @@ export function useGrowSpaceData() {
   const [aiInsights, setAiInsights] = useState<AiInsight[]>([]);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
-      setAuthReady(true);
-      if (firebaseUser) {
-        setDataLoading(true);
-        try {
-          await ensureUserProfileAndSeed(firebaseUser);
-        } catch (err) {
-          console.error('Failed ensuring profile:', err);
-        }
-      } else {
-        setProfile(null);
-        setDataLoading(false);
-      }
+    ensureUserProfileAndSeed(uid).catch((err) => {
+      console.error('Failed ensuring workspace profile:', err);
     });
-    return () => unsub();
-  }, []);
+  }, [uid]);
 
   useEffect(() => {
-    if (!authReady || !user) return;
-    const uid = user.uid;
     const unsubs: (() => void)[] = [];
 
     unsubs.push(
@@ -140,7 +123,7 @@ export function useGrowSpaceData() {
     return () => {
       unsubs.forEach((u) => u());
     };
-  }, [authReady, user]);
+  }, [uid]);
 
   const todayKey = getTodayDateKey();
 
@@ -305,8 +288,7 @@ export function useGrowSpaceData() {
   }, [todayKey, profile, dailyTasks, studyTasks, moods, todayHealthLog, careerApps, careerSkills]);
 
   return {
-    user,
-    authReady,
+    uid,
     dataLoading,
     profile,
     moods,

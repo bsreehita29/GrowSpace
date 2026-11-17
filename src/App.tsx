@@ -18,7 +18,6 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
-import { AuthGate } from './components/AuthGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AiAssistantView } from './components/views/AiAssistantView';
 import { CalendarView } from './components/views/CalendarView';
@@ -110,22 +109,7 @@ function GrowSpaceWorkspace() {
   const [quickMoodScore, setQuickMoodScore] = useState(4);
   const [quickSaving, setQuickSaving] = useState(false);
 
-  if (!data.authReady) {
-    return (
-      <div className="min-h-screen bg-[#FAF8F3] flex items-center justify-center p-6">
-        <div className="text-center space-y-2">
-          <p className="font-display text-2xl font-semibold text-[#1F2A22]">GROW SPACE</p>
-          <p className="text-xs text-[#5A685C]">Preparing your workspace...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!data.user) {
-    return <AuthGate />;
-  }
-
-  const uid = data.user.uid;
+  const uid = data.uid;
   const unreadCount =
     data.notifications.filter((n) => !n.read).length + data.smartAlerts.length;
 
@@ -244,7 +228,7 @@ function GrowSpaceWorkspace() {
           className="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-[#EAE7DF] text-left cursor-pointer"
         >
           <div className="w-8 h-8 rounded-full bg-[#3E6B4F] text-white text-xs font-semibold flex items-center justify-center shrink-0">
-            {(data.profile?.displayName || data.user.email || 'G').slice(0, 1).toUpperCase()}
+            {(data.profile?.displayName || 'G').slice(0, 1).toUpperCase()}
           </div>
           <div className="min-w-0">
             <p className="text-xs font-semibold text-[#1F2A22] truncate">

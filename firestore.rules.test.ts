@@ -17,7 +17,7 @@ export interface AdversarialPayloadCase {
 export const dirtyDozenPayloads: AdversarialPayloadCase[] = [
   {
     id: 'DD-01',
-    name: 'Unauthenticated Read',
+    name: 'Short Guessable Workspace Read',
     operation: 'get',
     path: 'users/uid_a/moods/m1',
     auth: null,
@@ -25,18 +25,18 @@ export const dirtyDozenPayloads: AdversarialPayloadCase[] = [
   },
   {
     id: 'DD-02',
-    name: 'Cross-User Read',
+    name: 'Invalid Workspace ID Format Read',
     operation: 'get',
-    path: 'users/uid_b/financeTx/tx1',
-    auth: { uid: 'uid_a', emailVerified: true },
+    path: 'users/bad$workspace$id$with$invalid$chars/financeTx/tx1',
+    auth: null,
     expectedOutcome: 'PERMISSION_DENIED',
   },
   {
     id: 'DD-03',
-    name: 'Unverified Email Write',
+    name: 'Short Guessable Workspace Write',
     operation: 'create',
     path: 'users/uid_a/dailyTasks/t1',
-    auth: { uid: 'uid_a', emailVerified: false },
+    auth: null,
     payload: {
       userId: 'uid_a',
       title: 'Morning review',
