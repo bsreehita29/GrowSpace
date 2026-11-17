@@ -1,0 +1,668 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Default-Deny Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core Security Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function userDocExists(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId));
+    }
+
+    function isDateKey(val) {
+      return val is string && val.size() <= 16 && val.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    function isBoundedStringList(arr, maxItems, maxItemLen) {
+      return arr is list && arr.size() <= maxItems && (arr.size() == 0 || (arr[0] is string && arr[0].size() <= maxItemLen));
+    }
+
+    function hasValidOwnerCreate(data, userId) {
+      return data.userId is string &&
+        data.userId == userId &&
+        data.userId == request.auth.uid &&
+        data.createdAt == request.time &&
+        data.updatedAt == request.time;
+    }
+
+    function hasImmutableOwnerUpdate() {
+      return incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+    }
+
+    // Entity Validation Helpers
+    function isValidUserProfile(data) {
+      return data.keys().hasAll([
+          'userId', 'displayName', 'email', 'roleTitle', 'bio',
+          'dailyWaterGoalMl', 'dailySleepGoalHours', 'monthlyBudgetLimit',
+          'dailyFocusGoalMinutes', 'currencySymbol', 'seededStarterData',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'displayName', 'email', 'roleTitle', 'bio',
+          'dailyWaterGoalMl', 'dailySleepGoalHours', 'monthlyBudgetLimit',
+          'dailyFocusGoalMinutes', 'currencySymbol', 'seededStarterData',
+          'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 160 &&
+        data.roleTitle is string && data.roleTitle.size() <= 80 &&
+        data.bio is string && data.bio.size() <= 300 &&
+        data.dailyWaterGoalMl is number && data.dailyWaterGoalMl >= 500 && data.dailyWaterGoalMl <= 8000 &&
+        data.dailySleepGoalHours is number && data.dailySleepGoalHours >= 3 && data.dailySleepGoalHours <= 14 &&
+        data.monthlyBudgetLimit is number && data.monthlyBudgetLimit >= 0 && data.monthlyBudgetLimit <= 10000000 &&
+        data.dailyFocusGoalMinutes is number && data.dailyFocusGoalMinutes >= 10 && data.dailyFocusGoalMinutes <= 720 &&
+        data.currencySymbol is string && data.currencySymbol.size() >= 1 && data.currencySymbol.size() <= 8 &&
+        data.seededStarterData is bool;
+    }
+
+    function isValidMoodEntry(data) {
+      return data.keys().hasAll([
+          'userId', 'dateKey', 'moodScore', 'stressLevel', 'emotionLabel',
+          'meditationMinutes', 'journalText', 'gratitudeNote', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'dateKey', 'moodScore', 'stressLevel', 'emotionLabel',
+          'meditationMinutes', 'journalText', 'gratitudeNote', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        isDateKey(data.dateKey) &&
+        data.moodScore is int && data.moodScore >= 1 && data.moodScore <= 5 &&
+        data.stressLevel is int && data.stressLevel >= 1 && data.stressLevel <= 5 &&
+        data.emotionLabel is string && data.emotionLabel.size() >= 1 && data.emotionLabel.size() <= 40 &&
+        data.meditationMinutes is int && data.meditationMinutes >= 0 && data.meditationMinutes <= 480 &&
+        data.journalText is string && data.journalText.size() <= 2500 &&
+        data.gratitudeNote is string && data.gratitudeNote.size() <= 400;
+    }
+
+    function isValidStudyCourse(data) {
+      return data.keys().hasAll([
+          'userId', 'courseName', 'courseCode', 'dayOfWeek', 'startTime', 'endTime',
+          'room', 'attendedClasses', 'totalClasses', 'targetAttendance', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'courseName', 'courseCode', 'dayOfWeek', 'startTime', 'endTime',
+          'room', 'attendedClasses', 'totalClasses', 'targetAttendance', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        data.courseName is string && data.courseName.size() >= 1 && data.courseName.size() <= 100 &&
+        data.courseCode is string && data.courseCode.size() <= 24 &&
+        data.dayOfWeek in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] &&
+        data.startTime is string && data.startTime.size() <= 10 &&
+        data.endTime is string && data.endTime.size() <= 10 &&
+        data.room is string && data.room.size() <= 60 &&
+        data.attendedClasses is int && data.attendedClasses >= 0 && data.attendedClasses <= 500 &&
+        data.totalClasses is int && data.totalClasses >= 0 && data.totalClasses <= 500 &&
+        data.targetAttendance is int && data.targetAttendance >= 1 && data.targetAttendance <= 100;
+    }
+
+    function isValidStudyTask(data) {
+      return data.keys().hasAll([
+          'userId', 'title', 'courseName', 'taskType', 'dueDate',
+          'priority', 'status', 'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'title', 'courseName', 'taskType', 'dueDate',
+          'priority', 'status', 'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 140 &&
+        data.courseName is string && data.courseName.size() <= 100 &&
+        data.taskType in ['assignment', 'exam', 'revision'] &&
+        isDateKey(data.dueDate) &&
+        data.priority in ['low', 'medium', 'high'] &&
+        data.status in ['pending', 'in_progress', 'completed'] &&
+        data.notes is string && data.notes.size() <= 600;
+    }
+
+    function isValidStudyNote(data) {
+      return data.keys().hasAll([
+          'userId', 'title', 'courseName', 'content', 'focusMinutes', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'title', 'courseName', 'content', 'focusMinutes', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 140 &&
+        data.courseName is string && data.courseName.size() <= 100 &&
+        data.content is string && data.content.size() <= 5000 &&
+        data.focusMinutes is int && data.focusMinutes >= 0 && data.focusMinutes <= 1440;
+    }
+
+    function isValidCareerSkill(data) {
+      return data.keys().hasAll([
+          'userId', 'name', 'category', 'proficiency', 'targetLevel', 'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'name', 'category', 'proficiency', 'targetLevel', 'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 80 &&
+        data.category is string && data.category.size() <= 40 &&
+        data.proficiency is int && data.proficiency >= 0 && data.proficiency <= 100 &&
+        data.targetLevel is int && data.targetLevel >= 0 && data.targetLevel <= 100 &&
+        data.notes is string && data.notes.size() <= 500;
+    }
+
+    function isValidCareerApplication(data) {
+      return data.keys().hasAll([
+          'userId', 'company', 'role', 'appType', 'status', 'deadline',
+          'resumeVersion', 'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'company', 'role', 'appType', 'status', 'deadline',
+          'resumeVersion', 'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        data.company is string && data.company.size() >= 1 && data.company.size() <= 100 &&
+        data.role is string && data.role.size() >= 1 && data.role.size() <= 120 &&
+        data.appType in ['internship', 'full_time', 'part_time', 'research'] &&
+        data.status in ['saved', 'applied', 'interviewing', 'offer', 'rejected'] &&
+        isDateKey(data.deadline) &&
+        data.resumeVersion is string && data.resumeVersion.size() <= 60 &&
+        data.notes is string && data.notes.size() <= 800;
+    }
+
+    function isValidCareerPrepItem(data) {
+      return data.keys().hasAll([
+          'userId', 'title', 'category', 'answerNotes', 'completed', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'title', 'category', 'answerNotes', 'completed', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 140 &&
+        data.category in ['resume', 'behavioral', 'technical'] &&
+        data.answerNotes is string && data.answerNotes.size() <= 2000 &&
+        data.completed is bool;
+    }
+
+    function isValidDailyTask(data) {
+      return data.keys().hasAll([
+          'userId', 'title', 'dueDate', 'dueTime', 'category',
+          'priority', 'completed', 'reminderEnabled', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'title', 'dueDate', 'dueTime', 'category',
+          'priority', 'completed', 'reminderEnabled', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 160 &&
+        isDateKey(data.dueDate) &&
+        data.dueTime is string && data.dueTime.size() <= 10 &&
+        data.category is string && data.category.size() <= 40 &&
+        data.priority in ['low', 'medium', 'high'] &&
+        data.completed is bool &&
+        data.reminderEnabled is bool;
+    }
+
+    function isValidHabit(data) {
+      return data.keys().hasAll([
+          'userId', 'title', 'frequency', 'targetPerWeek', 'completedDates', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'title', 'frequency', 'targetPerWeek', 'completedDates', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 100 &&
+        data.frequency in ['daily', 'weekdays', 'weekly'] &&
+        data.targetPerWeek is int && data.targetPerWeek >= 1 && data.targetPerWeek <= 7 &&
+        isBoundedStringList(data.completedDates, 90, 16);
+    }
+
+    function isValidHealthLog(data) {
+      return data.keys().hasAll([
+          'userId', 'dateKey', 'sleepHours', 'waterMl', 'workoutMinutes',
+          'workoutType', 'nutritionNote', 'calories', 'selfCareChecklist', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'dateKey', 'sleepHours', 'waterMl', 'workoutMinutes',
+          'workoutType', 'nutritionNote', 'calories', 'selfCareChecklist', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        isDateKey(data.dateKey) &&
+        data.sleepHours is number && data.sleepHours >= 0 && data.sleepHours <= 24 &&
+        data.waterMl is int && data.waterMl >= 0 && data.waterMl <= 12000 &&
+        data.workoutMinutes is int && data.workoutMinutes >= 0 && data.workoutMinutes <= 600 &&
+        data.workoutType is string && data.workoutType.size() <= 60 &&
+        data.nutritionNote is string && data.nutritionNote.size() <= 400 &&
+        data.calories is int && data.calories >= 0 && data.calories <= 15000 &&
+        isBoundedStringList(data.selfCareChecklist, 10, 60);
+    }
+
+    function isValidFinanceTx(data) {
+      return data.keys().hasAll([
+          'userId', 'title', 'amount', 'txType', 'category', 'dateKey', 'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'title', 'amount', 'txType', 'category', 'dateKey', 'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+        data.amount is number && data.amount >= 0 && data.amount <= 100000000 &&
+        data.txType in ['expense', 'income', 'savings'] &&
+        data.category is string && data.category.size() <= 40 &&
+        isDateKey(data.dateKey) &&
+        data.notes is string && data.notes.size() <= 300;
+    }
+
+    function isValidFinanceGoal(data) {
+      return data.keys().hasAll([
+          'userId', 'title', 'goalType', 'targetAmount', 'currentAmount', 'category', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'title', 'goalType', 'targetAmount', 'currentAmount', 'category', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 100 &&
+        data.goalType in ['budget', 'savings'] &&
+        data.targetAmount is number && data.targetAmount >= 0 && data.targetAmount <= 100000000 &&
+        data.currentAmount is number && data.currentAmount >= 0 && data.currentAmount <= 100000000 &&
+        data.category is string && data.category.size() <= 40;
+    }
+
+    function isValidGrowthGoal(data) {
+      return data.keys().hasAll([
+          'userId', 'title', 'category', 'targetDate', 'progress',
+          'visionQuote', 'milestoneNote', 'isAchievement', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'title', 'category', 'targetDate', 'progress',
+          'visionQuote', 'milestoneNote', 'isAchievement', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 140 &&
+        data.category is string && data.category.size() <= 40 &&
+        isDateKey(data.targetDate) &&
+        data.progress is int && data.progress >= 0 && data.progress <= 100 &&
+        data.visionQuote is string && data.visionQuote.size() <= 300 &&
+        data.milestoneNote is string && data.milestoneNote.size() <= 500 &&
+        data.isAchievement is bool;
+    }
+
+    function isValidOpportunity(data) {
+      return data.keys().hasAll([
+          'userId', 'title', 'organization', 'oppType', 'deadline',
+          'linkUrl', 'status', 'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'title', 'organization', 'oppType', 'deadline',
+          'linkUrl', 'status', 'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 140 &&
+        data.organization is string && data.organization.size() >= 1 && data.organization.size() <= 100 &&
+        data.oppType in ['internship', 'scholarship', 'hackathon', 'course'] &&
+        isDateKey(data.deadline) &&
+        data.linkUrl is string && data.linkUrl.size() <= 300 &&
+        data.status in ['exploring', 'shortlisted', 'applied', 'enrolled'] &&
+        data.notes is string && data.notes.size() <= 600;
+    }
+
+    function isValidWeeklyReset(data) {
+      return data.keys().hasAll([
+          'userId', 'weekLabel', 'wins', 'challenges', 'focusTheme',
+          'nextWeekPriorities', 'wellnessRating', 'productivityRating', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'weekLabel', 'wins', 'challenges', 'focusTheme',
+          'nextWeekPriorities', 'wellnessRating', 'productivityRating', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        data.weekLabel is string && data.weekLabel.size() >= 1 && data.weekLabel.size() <= 60 &&
+        data.wins is string && data.wins.size() <= 1500 &&
+        data.challenges is string && data.challenges.size() <= 1500 &&
+        data.focusTheme is string && data.focusTheme.size() <= 120 &&
+        isBoundedStringList(data.nextWeekPriorities, 6, 160) &&
+        data.wellnessRating is int && data.wellnessRating >= 1 && data.wellnessRating <= 5 &&
+        data.productivityRating is int && data.productivityRating >= 1 && data.productivityRating <= 5;
+    }
+
+    function isValidCalendarEvent(data) {
+      return data.keys().hasAll([
+          'userId', 'title', 'dateKey', 'startTime', 'endTime',
+          'moduleCategory', 'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'title', 'dateKey', 'startTime', 'endTime',
+          'moduleCategory', 'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 140 &&
+        isDateKey(data.dateKey) &&
+        data.startTime is string && data.startTime.size() <= 10 &&
+        data.endTime is string && data.endTime.size() <= 10 &&
+        data.moduleCategory is string && data.moduleCategory.size() <= 40 &&
+        data.notes is string && data.notes.size() <= 400;
+    }
+
+    function isValidAppNotification(data) {
+      return data.keys().hasAll([
+          'userId', 'title', 'message', 'module', 'read', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'title', 'message', 'module', 'read', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+        data.message is string && data.message.size() >= 1 && data.message.size() <= 320 &&
+        data.module is string && data.module.size() <= 40 &&
+        data.read is bool;
+    }
+
+    function isValidAiInsight(data) {
+      return data.keys().hasAll([
+          'userId', 'category', 'prompt', 'response', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'category', 'prompt', 'response', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        data.category in ['schedule', 'study', 'career', 'wellness', 'weekly'] &&
+        data.prompt is string && data.prompt.size() >= 1 && data.prompt.size() <= 1000 &&
+        data.response is string && data.response.size() >= 1 && data.response.size() <= 8000;
+    }
+
+    // User Profile Collection (Strict Owner PII Isolation)
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+      allow create: if isVerified() &&
+        isOwner(userId) &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming()) &&
+        hasValidOwnerCreate(incoming(), userId);
+      allow update: if isVerified() &&
+        isOwner(userId) &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming()) &&
+        hasImmutableOwnerUpdate() && (
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'displayName', 'roleTitle', 'bio', 'dailyWaterGoalMl',
+            'dailySleepGoalHours', 'monthlyBudgetLimit', 'dailyFocusGoalMinutes',
+            'currencySymbol', 'updatedAt'
+          ]) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['seededStarterData', 'updatedAt'])
+        );
+      allow delete: if false;
+
+      // Mental Wellness
+      match /moods/{entryId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(entryId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(entryId) &&
+          isValidMoodEntry(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
+        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(entryId) &&
+          isValidMoodEntry(incoming()) && hasImmutableOwnerUpdate() &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'moodScore', 'stressLevel', 'emotionLabel', 'meditationMinutes', 'journalText', 'gratitudeNote', 'updatedAt'
+          ]);
+        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(entryId);
+      }
+
+      // Study Courses
+      match /studyCourses/{courseId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(courseId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(courseId) &&
+          isValidStudyCourse(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
+        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(courseId) &&
+          isValidStudyCourse(incoming()) && hasImmutableOwnerUpdate() && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['attendedClasses', 'totalClasses', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['courseName', 'courseCode', 'dayOfWeek', 'startTime', 'endTime', 'room', 'targetAttendance', 'updatedAt'])
+          );
+        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(courseId);
+      }
+
+      // Study Tasks (Assignments & Exams)
+      match /studyTasks/{taskId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(taskId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(taskId) &&
+          isValidStudyTask(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
+        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(taskId) &&
+          isValidStudyTask(incoming()) && hasImmutableOwnerUpdate() && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['title', 'courseName', 'taskType', 'dueDate', 'priority', 'notes', 'updatedAt'])
+          );
+        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(taskId);
+      }
+
+      // Study Notes & Focus Logs
+      match /studyNotes/{noteId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(noteId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(noteId) &&
+          isValidStudyNote(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
+        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(noteId) &&
+          isValidStudyNote(incoming()) && hasImmutableOwnerUpdate() && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['title', 'courseName', 'content', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['focusMinutes', 'updatedAt'])
+          );
+        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(noteId);
+      }
+
+      // Career Skills
+      match /careerSkills/{skillId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(skillId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(skillId) &&
+          isValidCareerSkill(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
+        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(skillId) &&
+          isValidCareerSkill(incoming()) && hasImmutableOwnerUpdate() && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['proficiency', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['name', 'category', 'proficiency', 'targetLevel', 'notes', 'updatedAt'])
+          );
+        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(skillId);
+      }
+
+      // Career Applications
+      match /careerApps/{appId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(appId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(appId) &&
+          isValidCareerApplication(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
+        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(appId) &&
+          isValidCareerApplication(incoming()) && hasImmutableOwnerUpdate() &&
+          existing().status != 'rejected' && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['company', 'role', 'appType', 'deadline', 'resumeVersion', 'notes', 'updatedAt'])
+          );
+        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(appId);
+      }
+
+      // Career Prep
+      match /careerPrep/{prepId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(prepId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(prepId) &&
+          isValidCareerPrepItem(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
+        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(prepId) &&
+          isValidCareerPrepItem(incoming()) && hasImmutableOwnerUpdate() && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['completed', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['title', 'category', 'answerNotes', 'updatedAt'])
+          );
+        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(prepId);
+      }
+
+      // Daily Tasks
+      match /dailyTasks/{taskId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(taskId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(taskId) &&
+          isValidDailyTask(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
+        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(taskId) &&
+          isValidDailyTask(incoming()) && hasImmutableOwnerUpdate() && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['completed', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['reminderEnabled', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['title', 'dueDate', 'dueTime', 'category', 'priority', 'updatedAt'])
+          );
+        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(taskId);
+      }
+
+      // Habits
+      match /habits/{habitId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(habitId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(habitId) &&
+          isValidHabit(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
+        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(habitId) &&
+          isValidHabit(incoming()) && hasImmutableOwnerUpdate() && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['completedDates', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['title', 'frequency', 'targetPerWeek', 'updatedAt'])
+          );
+        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(habitId);
+      }
+
+      // Health Logs
+      match /healthLogs/{logId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(logId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(logId) &&
+          isValidHealthLog(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
+        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(logId) &&
+          isValidHealthLog(incoming()) && hasImmutableOwnerUpdate() && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['waterMl', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['selfCareChecklist', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['sleepHours', 'waterMl', 'workoutMinutes', 'workoutType', 'nutritionNote', 'calories', 'selfCareChecklist', 'updatedAt'])
+          );
+        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(logId);
+      }
+
+      // Finance Transactions
+      match /financeTx/{txId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(txId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(txId) &&
+          isValidFinanceTx(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
+        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(txId) &&
+          isValidFinanceTx(incoming()) && hasImmutableOwnerUpdate() &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['title', 'amount', 'txType', 'category', 'dateKey', 'notes', 'updatedAt']);
+        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(txId);
+      }
+
+      // Finance Goals
+      match /financeGoals/{goalId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(goalId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(goalId) &&
+          isValidFinanceGoal(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
+        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(goalId) &&
+          isValidFinanceGoal(incoming()) && hasImmutableOwnerUpdate() && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['currentAmount', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['title', 'goalType', 'targetAmount', 'currentAmount', 'category', 'updatedAt'])
+          );
+        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(goalId);
+      }
+
+      // Personal Growth Goals
+      match /growthGoals/{goalId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(goalId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(goalId) &&
+          isValidGrowthGoal(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
+        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(goalId) &&
+          isValidGrowthGoal(incoming()) && hasImmutableOwnerUpdate() && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['progress', 'isAchievement', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['title', 'category', 'targetDate', 'progress', 'visionQuote', 'milestoneNote', 'isAchievement', 'updatedAt'])
+          );
+        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(goalId);
+      }
+
+      // Opportunities
+      match /opportunities/{oppId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(oppId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(oppId) &&
+          isValidOpportunity(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
+        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(oppId) &&
+          isValidOpportunity(incoming()) && hasImmutableOwnerUpdate() && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['title', 'organization', 'oppType', 'deadline', 'linkUrl', 'status', 'notes', 'updatedAt'])
+          );
+        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(oppId);
+      }
+
+      // Weekly Resets
+      match /weeklyResets/{resetId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(resetId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(resetId) &&
+          isValidWeeklyReset(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
+        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(resetId) &&
+          isValidWeeklyReset(incoming()) && hasImmutableOwnerUpdate() &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'weekLabel', 'wins', 'challenges', 'focusTheme', 'nextWeekPriorities',
+            'wellnessRating', 'productivityRating', 'updatedAt'
+          ]);
+        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(resetId);
+      }
+
+      // Calendar Events
+      match /calendarEvents/{eventId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(eventId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(eventId) &&
+          isValidCalendarEvent(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
+        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(eventId) &&
+          isValidCalendarEvent(incoming()) && hasImmutableOwnerUpdate() &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'title', 'dateKey', 'startTime', 'endTime', 'moduleCategory', 'notes', 'updatedAt'
+          ]);
+        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(eventId);
+      }
+
+      // Notifications
+      match /notifications/{notifId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(notifId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(notifId) &&
+          isValidAppNotification(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
+        allow update: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(notifId) &&
+          isValidAppNotification(incoming()) && hasImmutableOwnerUpdate() &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['read', 'updatedAt']);
+        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(notifId);
+      }
+
+      // AI Insights
+      match /aiInsights/{insightId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(insightId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(insightId) &&
+          isValidAiInsight(incoming()) && hasValidOwnerCreate(incoming(), userId) && userDocExists(userId);
+        allow update: if false;
+        allow delete: if isVerified() && isOwner(userId) && isValidId(userId) && isValidId(insightId);
+      }
+    }
+  }
+}

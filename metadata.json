@@ -1,0 +1,6 @@
+{
+  "name": "GROW SPACE",
+  "description": "GROW SPACE – Your Life. Your Goals. Your Growth. All-in-one personal growth platform for mental wellness, study, career, daily life, health, finance, goals, opportunities, AI coaching, and weekly resets.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
